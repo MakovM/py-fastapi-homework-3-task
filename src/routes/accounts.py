@@ -87,7 +87,7 @@ async def user_register(user: UserRegistrationRequestSchema, db: AsyncSession = 
 async def user_account_activation(data: UserActivationRequestSchema, db: AsyncSession = Depends(get_db)):
     db_user = await get_user_by_email(db, data.email)
 
-    if db_user.is_active:
+    if not db_user or db_user.is_active:
         raise HTTPException(status_code=400, detail="User account is already active.")
 
     stmt_token = select(ActivationTokenModel).where(ActivationTokenModel.user_id == db_user.id)
@@ -115,14 +115,16 @@ async def password_reset_token_request(data: PasswordResetRequestSchema, db: Asy
     db_user = await get_user_by_email(db, data.email)
 
     if db_user and db_user.is_active:
+        try:
+            stmt_delete_token = delete(PasswordResetTokenModel).where(PasswordResetTokenModel.user_id == db_user.id)
+            await db.execute(stmt_delete_token)
 
-        stmt_delete_token = delete(PasswordResetTokenModel).where(PasswordResetTokenModel.user_id == db_user.id)
-        await db.execute(stmt_delete_token)
+            token = PasswordResetTokenModel(user=db_user)
 
-        token = PasswordResetTokenModel(user=db_user)
-
-        db.add(token)
-        await db.commit()
+            db.add(token)
+            await db.commit()
+        except SQLAlchemyError:
+            await db.rollback()
 
     return MessageResponseSchema.model_validate(
         {"message": "If you are registered, you will receive an email with instructions."}
@@ -165,7 +167,7 @@ async def password_reset_token_completion(
             await db.commit()
         raise HTTPException(status_code=400, detail="Invalid email or token.")
     try:
-        db_user._hashed_password = hash_password(data.password)
+        db_user.password = data.password
         await db.commit()
     except Exception:
         await db.rollback()
