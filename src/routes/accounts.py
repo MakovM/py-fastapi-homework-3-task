@@ -24,7 +24,7 @@ from schemas.accounts import AccountsErrorSchema, UserActivationRequestSchema, M
     TokenRefreshResponseSchema, TokenRefreshRequestSchema
 from security.interfaces import JWTAuthManagerInterface
 from security.passwords import hash_password
-from services.accounts import get_user_by_email, create_user
+from services.accounts import get_user_by_email
 
 router = APIRouter()
 
@@ -49,7 +49,27 @@ async def user_register(user: UserRegistrationRequestSchema, db: AsyncSession = 
     if db_user:
         raise HTTPException(status_code=409, detail=f"A user with this email {user.email} already exists.")
 
-    new_user = await create_user(db, user)
+    user_group_stmt = select(UserGroupModel.id).where(UserGroupModel.name == UserGroupEnum.USER.value)
+    user_group_id = await db.scalar(user_group_stmt)
+
+    try:
+        new_user = UserModel.create(
+            email=user.email,
+            raw_password=user.password,
+            group_id=user_group_id
+        )
+        db.add(new_user)
+        await db.flush()
+
+        user_token = ActivationTokenModel(user=new_user)
+        db.add(user_token)
+
+        await db.commit()
+        await db.refresh(new_user)
+
+    except Exception:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="An error occurred during user creation.")
 
     return UserRegistrationResponseSchema.model_validate(new_user)
 
@@ -202,6 +222,7 @@ async def login_user(
         )
         db.add(db_refresh_token)
         await db.commit()
+
     except Exception:
         await db.rollback()
         raise HTTPException(status_code=500, detail="An error occurred while processing the request.")

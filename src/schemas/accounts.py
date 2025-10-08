@@ -1,25 +1,7 @@
 from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 
 from database import accounts_validators
-
-
-class PasswordValidator:
-    @classmethod
-    def validate(cls, password: str) -> str:
-        special_chars = "@$!%*?#&"
-        if len(password) < 8:
-            raise ValueError("Password must contain at least 8 characters.")
-        elif not any(el.isupper() for el in password):
-            raise ValueError("Password must contain at least one uppercase letter.")
-        elif not any(el.islower() for el in password):
-            raise ValueError("Password must contain at least one lower letter.")
-        elif not any(el.isdigit() for el in password):
-            raise ValueError("Password must contain at least one digit.")
-        elif not any(el in special_chars for el in password):
-            raise ValueError(
-                "Password must contain at least one special character: @, $, !, %, *, ?, #, &."
-            )
-        return password
+from database.validators.accounts import validate_password_strength
 
 
 class AccountsErrorSchema(BaseModel):
@@ -40,7 +22,7 @@ class UserRegistrationRequestSchema(UserBaseSchema):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value):
-        return PasswordValidator.validate(value)
+        return validate_password_strength(value)
 
 
 class UserRegistrationResponseSchema(UserBaseSchema):
@@ -68,7 +50,7 @@ class PasswordResetCompleteRequestSchema(UserBaseSchema):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value):
-        return PasswordValidator.validate(value)
+        return validate_password_strength(value)
 
 
 class UserLoginRequestSchema(UserBaseSchema):
